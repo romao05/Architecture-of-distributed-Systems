@@ -19,8 +19,15 @@ The server should cache the results in an in-memory database.
 
 Non-Functional Requirements:
 
-The in-memory database has to be Redis.
+The client should receive the respons in less than 4 seconds.
 
+The server should handle a load of __ thousand users.
+
+Stakeholders and functions:
+
+Site Reliability Engineers - Resource configuration for the application.
+
+Developers - Group members.
 
 
 
@@ -29,7 +36,15 @@ your system. Your service must follow a Client-Server architectural style. Your 
 illustrate the key components and the connectors between them. If needed, you may explain the
 main functionality of the components and connectors concisely.
 
+(Flow chart)
+
 5. Architectural Style Trade-off Analysis: While your implementation must follow the Client-Server
 model, briefly analyze the suitability of two other architectural styles, i.e., Peer-to-Peer, Layered,
 and Publish-Subscribe, covered in the course. Discuss whether and how each could be used to
 develop a similar service.
+
+
+
+
+
+

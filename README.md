@@ -45,6 +45,6 @@ develop a similar service.
 
 
 
-
+#for next meet. although usual text counter services are user based clients, there is a possibility that this might be a service for a company and they can be considered as a client. In which case, they will also be a stakeholder since it is their project requirement. additionally, it is not clear if the client provides the reference text which will then be stored in the server or the server already has the text stored and the client just provides the reference. the former makes sense.
 
 

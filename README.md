@@ -45,6 +45,9 @@ develop a similar service.
 
 Publish-subscribe:
 
+The publish-subscribe architecture is not compatible with these requirements. In this model, a server continuously performs a task and notifies subscribers of the internal changes they have requested. Here, the server's only purpose is to count words in static files in response to specific client requests, so there is no continuous activity: the server only acts when a request arrives.
+
+Making publish-subscribe work would require one of two workarounds: a system that updates the files independently, or one that constantly iterates over every word in every file to keep the counts current. Even then, since the files are static, clients would periodically receive the same answers, which adds load without adding value.
 
 Peer-2-peer:
 

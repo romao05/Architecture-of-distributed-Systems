@@ -43,6 +43,17 @@ model, briefly analyze the suitability of two other architectural styles, i.e., 
 and Publish-Subscribe, covered in the course. Discuss whether and how each could be used to
 develop a similar service.
 
+Publish-subscribe:
+
+
+Peer-2-peer:
+
+Assuming the architecture has no file replicas, just like the Server-Client server described in Phase 1, a peer-to-peer (P2P) design with a super peer would also improve response time. The super peer acts as a request distributor: when a request arrives, it redirects it to the peer that holds the corresponding file, and that peer handles the request. While that peer is busy, the super peer keeps receiving new requests and distributing them among the other available peers. The system can therefore process multiple requests simultaneously, which is faster than the single-server, multiple-client implementation required by the assignment.
+
+This design has drawbacks. Since there are no replicas, if the peer responsible for a file is unavailable or has crashed, the file cannot be found. The super peer is also a single point of failure and a potential bottleneck, because the speed of its request handling and distribution limits the throughput of the whole system, and if it crashes, the system stops working.
+
+Regarding caching, the architecture would have caches at both levels. The super peer would keep a global cache, and each peer would keep a local cache of the most frequently requested files it is responsible for.
+
 
 
 #for next meet. although usual text counter services are user based clients, there is a possibility that this might be a service for a company and they can be considered as a client. In which case, they will also be a stakeholder since it is their project requirement. additionally, it is not clear if the client provides the reference text which will then be stored in the server or the server already has the text stored and the client just provides the reference. the former makes sense.

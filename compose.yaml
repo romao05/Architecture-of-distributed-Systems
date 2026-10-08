@@ -1,0 +1,11 @@
+services:
+  server:
+    build: .
+    tty: true
+    stdin_open: true
+    working_dir: /src/server
+  client:
+    build: .
+    tty: true
+    stdin_open: true
+    working_dir: /src/client

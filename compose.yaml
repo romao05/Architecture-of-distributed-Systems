@@ -1,59 +1,81 @@
+version: '3.8'
 services:
 
-#Client-server
+# Cache Layer
+  redis:
+    image: redis:alpine
+    container_name: redis_cache
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
 
+# Client-server
   server:
     build: .
+    container_name: rpyc_server
     tty: true
     stdin_open: true
-    working_dir: /src/server
+    working_dir: /src/server       # Tells Docker to run commands from this subfolder
+    volumes:
+      - ./src:/src                 # Mounts the whole src folder
+      - ./data:/data
+    command: python3 server.py     # Executes the file inside /src/server
+    depends_on:
+      - redis
+
   client:
     build: .
+    container_name: test_client
     tty: true
     stdin_open: true
-    working_dir: /src/
-    
-#Monitoring-stack
-
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
+    working_dir: /src/client       # Tells Docker to run commands from this subfolder
     volumes:
-      - ./monitoring_stack/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-    ports:
-      - "9090:9090"
-    restart: unless-stopped
-
-  cadvisor:
-    image: gcr.io/cadvisor/cadvisor:latest
-    container_name: cadvisor
-    volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:rw
-      - /sys:/sys:ro
-      - /var/lib/docker/:/var/lib/docker:ro
-    ports:
-      - "8080:8080"
-    restart: unless-stopped
-
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    ports:
-      - "3000:3000"
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./monitoring_stack/grafana/provisioning:/etc/grafana/provisioning
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    restart: unless-stopped
+      - ./src:/src                 # Mounts the whole src folder
+    command: python3 benchmark_client.py # Executes the file inside /src/client
     depends_on:
-      - prometheus
+      - server
 
-volumes:
-  prometheus_data: {}
-  grafana_data: {}
+
+## Monitoring-stack
+#   prometheus:
+#     image: prom/prometheus:latest
+#     container_name: prometheus
+#     volumes:
+#       - ./monitoring_stack/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+#       - prometheus_data:/prometheus
+#     command:
+#       - '--config.file=/etc/prometheus/prometheus.yml'
+#     ports:
+#       - "9090:9090"
+#     restart: unless-stopped
+
+#   cadvisor:
+#     image: gcr.io/cadvisor/cadvisor:latest
+#     container_name: cadvisor
+#     volumes:
+#       - /:/rootfs:ro
+#       - /var/run:/var/run:rw
+#       - /sys:/sys:ro
+#       - /var/lib/docker/:/var/lib/docker:ro
+#     ports:
+#       - "8080:8080"
+#     restart: unless-stopped
+
+#   grafana:
+#     image: grafana/grafana:latest
+#     container_name: grafana
+#     ports:
+#       - "3000:3000"
+#     volumes:
+#       - grafana_data:/var/lib/grafana
+#       - ./monitoring_stack/grafana/provisioning:/etc/grafana/provisioning
+#     environment:
+#       - GF_SECURITY_ADMIN_USER=admin
+#       - GF_SECURITY_ADMIN_PASSWORD=admin
+#     restart: unless-stopped
+#     depends_on:
+#       - prometheus
+
+# volumes:
+#   prometheus_data: {}
+#   grafana_data: {}

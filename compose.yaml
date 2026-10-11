@@ -35,9 +35,9 @@ services:
       [
         "wordcount-client",
         "--file",
-        "sample.txt",
+        "twilight-annette-lyster.txt",
         "--keyword",
-        "distributed",
+        "Christie",
       ]
     environment:
       SERVER_HOST: server

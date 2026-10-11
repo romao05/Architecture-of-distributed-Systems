@@ -1,5 +1,3 @@
-*.pdf
-
 # Python
 __pycache__/
 *.py[cod]
@@ -26,5 +24,6 @@ dist/
 # macOS
 .DS_Store
 
-# Overleaf
-overleaf
+# Data + Results
+files
+results

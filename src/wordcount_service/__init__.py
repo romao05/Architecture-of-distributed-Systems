@@ -1,0 +1,1 @@
+"""Word count service components."""

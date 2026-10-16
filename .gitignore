@@ -27,3 +27,6 @@ dist/
 # Data + Results
 files
 results
+
+# Zip File Phases
+phases

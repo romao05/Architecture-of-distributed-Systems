@@ -11,6 +11,7 @@ dependencies = [
 
 [project.scripts]
 wordcount-client = "wordcount_service.client:main"
+wordcount-loadbalancer = "wordcount_service.load_balancer:main"
 wordcount-server = "wordcount_service.server:main"
 
 [build-system]

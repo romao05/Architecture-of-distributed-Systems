@@ -62,3 +62,19 @@ Regarding caching, the architecture would have caches at both levels. The super 
 #for next meet. although usual text counter services are user based clients, there is a possibility that this might be a service for a company and they can be considered as a client. In which case, they will also be a stakeholder since it is their project requirement. additionally, it is not clear if the client provides the reference text which will then be stored in the server or the server already has the text stored and the client just provides the reference. the former makes sense.
 
 
+
+
+# Phase 3: Scalability & Load Balancing
+
+Three server replicas (`server1`-`server3`) run behind an asyncio TCP load balancer
+(`src/wordcount_service/load_balancer.py`) that forwards the RPyC byte stream unchanged.
+Algorithms: `least_connections` and `least_response_time` (set with `LB_ALGORITHM`).
+
+```bash
+make up                 # redis, server1-3, loadbalancer (least connections)
+make demo               # 9 parallel requests through the load balancer
+make logs               # follow load balancer and server logs
+make lb-lrt             # switch to least response time (make lb-lc to switch back)
+make benchmark-phase3   # 1 server vs LC vs LRT, plus slow-server3 runs
+uv run python scripts/plot_phase3.py --report-dir ../ADS-Project
+```

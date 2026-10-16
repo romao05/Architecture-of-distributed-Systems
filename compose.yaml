@@ -1,23 +1,79 @@
+x-server: &server-base
+  build: .
+  command: ["wordcount-server"]
+  environment: &server-env
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+    WORDCOUNT_FILES_DIR: /app/src/wordcount_service/files
+  networks:
+    - wordcount-net
+  depends_on:
+    redis:
+      condition: service_healthy
+  healthcheck:
+    test:
+      - CMD
+      - python
+      - -c
+      - "import socket; socket.create_connection(('localhost', 18812), 2).close()"
+    interval: 3s
+    timeout: 3s
+    retries: 10
+
 services:
   redis:
     image: redis:7-alpine
+    networks:
+      - wordcount-net
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s
       timeout: 2s
       retries: 10
 
-  server:
-    build: .
-    command: ["wordcount-server"]
+  server1:
+    <<: *server-base
+    hostname: server1
+    container_name: wordcount-server1
     environment:
-      REDIS_HOST: redis
-      REDIS_PORT: "6379"
-      WORDCOUNT_FILES_DIR: /app/src/wordcount_service/files
+      <<: *server-env
+      SERVER_NAME: server1
+    ports:
+      - "18813:18812"
+
+  server2:
+    <<: *server-base
+    hostname: server2
+    container_name: wordcount-server2
+    environment:
+      <<: *server-env
+      SERVER_NAME: server2
+
+  server3:
+    <<: *server-base
+    hostname: server3
+    container_name: wordcount-server3
+    environment:
+      <<: *server-env
+      SERVER_NAME: server3
+
+  loadbalancer:
+    build: .
+    command: ["wordcount-loadbalancer"]
+    container_name: wordcount-lb
+    environment:
+      LB_ALGORITHM: ${LB_ALGORITHM:-least_connections}
+      LB_LOG_CONNECTIONS: ${LB_LOG_CONNECTIONS:-1}
+    networks:
+      - wordcount-net
     ports:
       - "18812:18812"
     depends_on:
-      redis:
+      server1:
+        condition: service_healthy
+      server2:
+        condition: service_healthy
+      server3:
         condition: service_healthy
     healthcheck:
       test:
@@ -35,13 +91,22 @@ services:
       [
         "wordcount-client",
         "--file",
-        "twilight-annette-lyster.txt",
+        "shakespeare.txt",
         "--keyword",
-        "Christie",
+        "love,death,king,queen,night,day,war,peace,heart",
+        "--repeat",
+        "9",
+        "--parallel",
       ]
     environment:
-      SERVER_HOST: server
+      SERVER_HOST: loadbalancer
       SERVER_PORT: "18812"
+    networks:
+      - wordcount-net
     depends_on:
-      server:
+      loadbalancer:
         condition: service_healthy
+
+networks:
+  wordcount-net:
+    name: wordcount-net

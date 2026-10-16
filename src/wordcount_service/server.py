@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import re
+import socket
 import time
 from pathlib import Path
 from typing import Any
@@ -19,7 +20,8 @@ from wordcount_service.cache import WordCountCache
 class WordCountService(rpyc.Service):
     """Expose word counting over RPyC."""
 
-    def __init__(self, files_dir: Path, cache: WordCountCache) -> None:
+    def __init__(self, files_dir: Path, cache: WordCountCache, name: str) -> None:
+        self._name = name
         self._files_dir = files_dir.resolve()
         self._cache = cache
 
@@ -53,7 +55,13 @@ class WordCountService(rpyc.Service):
             "count": count,
             "cached": cached,
             "latency_ms": (time.perf_counter() - started) * 1000,
+            "server": self._name,
         }
+        print(
+            f"[{self._name}] count {file_id} {keyword!r} -> {count} "
+            f"cached={cached} {result['latency_ms']:.1f} ms",
+            flush=True,
+        )
         return json.dumps(result)
 
     def exposed_hot_keywords(self, limit: int = 10) -> str:
@@ -84,6 +92,9 @@ def main() -> None:
             os.getenv("WORDCOUNT_FILES_DIR", "/app/src/wordcount_service/files")
         ),
     )
+    parser.add_argument(
+        "--name", default=os.getenv("SERVER_NAME", socket.gethostname())
+    )
     args = parser.parse_args()
-    service = WordCountService(args.files_dir, WordCountCache())
+    service = WordCountService(args.files_dir, WordCountCache(), args.name)
     ThreadedServer(service, hostname=args.host, port=args.port).start()

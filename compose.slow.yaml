@@ -1,0 +1,5 @@
+# Heterogeneous-capacity experiment: server3 gets half a CPU.
+# Use: docker compose -f compose.yaml -f compose.slow.yaml up -d
+services:
+  server3:
+    cpus: "0.5"

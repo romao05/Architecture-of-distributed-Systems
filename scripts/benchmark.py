@@ -1,4 +1,4 @@
-"""Run Phase 2 latency measurements and generate tables and figures."""
+"""Run latency measurements (Phase 2 and Phase 3) and generate tables and figures."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import argparse
 import csv
 import json
 import math
+import os
 import re
 import socket
 import subprocess
@@ -27,6 +28,7 @@ class RequestResult:
     latency_ms: float
     cached: bool
     failed: bool
+    server: str = ""
 
 
 @dataclass(frozen=True)
@@ -39,6 +41,7 @@ class RateResult:
     maximum_ms: float
     cached_requests: int
     failed_requests: int
+    server_latencies: dict[str, list[float]]
 
 
 def request(host: str, port: int, file_id: str, keyword: str) -> RequestResult:
@@ -50,6 +53,7 @@ def request(host: str, port: int, file_id: str, keyword: str) -> RequestResult:
         )
         response = json.loads(connection.root.count(file_id, keyword))
         cached = bool(response["cached"])
+        server = str(response.get("server", ""))
     except (
         TimeoutError,
         EOFError,
@@ -69,6 +73,7 @@ def request(host: str, port: int, file_id: str, keyword: str) -> RequestResult:
         latency_ms=(time.perf_counter() - started) * 1000,
         cached=cached,
         failed=False,
+        server=server,
     )
 
 
@@ -113,6 +118,9 @@ def measure_rate(
         p99_ms = 0.0
         minimum_ms = 0.0
         maximum_ms = 0.0
+    server_latencies: dict[str, list[float]] = {}
+    for result in successful_results:
+        server_latencies.setdefault(result.server, []).append(result.latency_ms)
     return RateResult(
         rate=rate,
         requests=len(results),
@@ -122,15 +130,18 @@ def measure_rate(
         maximum_ms=maximum_ms,
         cached_requests=sum(result.cached for result in results),
         failed_requests=failed_requests,
+        server_latencies=server_latencies,
     )
 
 
-def write_results(results: list[RateResult], output_dir: Path, mode: str) -> None:
+def write_results(
+    results: list[RateResult], output_dir: Path, mode: str, label: str
+) -> None:
     figures_dir = output_dir / "figures"
     tables_dir = output_dir / "tables"
     figures_dir.mkdir(parents=True, exist_ok=True)
     tables_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = tables_dir / f"phase2_latency_{mode}.csv"
+    csv_path = tables_dir / f"{label}_latency_{mode}.csv"
     with csv_path.open("w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
         writer.writerow(
@@ -159,7 +170,7 @@ def write_results(results: list[RateResult], output_dir: Path, mode: str) -> Non
                 ]
             )
 
-    markdown_path = tables_dir / f"phase2_latency_{mode}.md"
+    markdown_path = tables_dir / f"{label}_latency_{mode}.md"
     with markdown_path.open("w", encoding="utf-8") as file:
         file.write(
             "| Request rate (req/s) | Requests | Average (ms) | "
@@ -177,17 +188,20 @@ def write_results(results: list[RateResult], output_dir: Path, mode: str) -> Non
                 f"{result.failed_requests} |\n"
             )
 
+    write_distribution(results, tables_dir / f"{label}_distribution_{mode}.csv")
+
+    figure_prefix = "" if label == "phase2" else f"{label}_"
     rates = [result.rate for result in results]
     average = [result.average_ms for result in results]
     p99 = [result.p99_ms for result in results]
     for filename, title, values in (
         (
-            f"average_latency_{mode}.png",
+            f"{figure_prefix}average_latency_{mode}.png",
             f"Average execution latency ({mode})",
             average,
         ),
         (
-            f"p99_latency_{mode}.png",
+            f"{figure_prefix}p99_latency_{mode}.png",
             f"99th-percentile execution latency ({mode})",
             p99,
         ),
@@ -205,6 +219,34 @@ def write_results(results: list[RateResult], output_dir: Path, mode: str) -> Non
         plt.close(figure)
 
 
+def write_distribution(results: list[RateResult], path: Path) -> None:
+    """Write how many successful requests each server handled per rate."""
+    with path.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(
+            ["request_rate_per_second", "server", "requests", "average_latency_ms"]
+        )
+        for result in results:
+            for server, latencies in sorted(result.server_latencies.items()):
+                average = sum(latencies) / len(latencies)
+                writer.writerow([result.rate, server, len(latencies), f"{average:.3f}"])
+
+
+def flush_redis(compose_files: list[str]) -> None:
+    command = ["docker", "compose"]
+    for compose_file in compose_files:
+        command += ["-f", compose_file]
+    command += ["exec", "-T", "redis", "redis-cli", "FLUSHALL"]
+    subprocess.run(command, check=True)
+
+
+def format_distribution(result: RateResult) -> str:
+    return " ".join(
+        f"{server or '?'}={len(latencies)}"
+        for server, latencies in sorted(result.server_latencies.items())
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
@@ -216,6 +258,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mode", choices=("warm", "cold"), default="warm")
     parser.add_argument("--files-dir", type=Path, default=Path("src/wordcount_service/files"))
     parser.add_argument("--output-dir", type=Path, default=Path("results"))
+    parser.add_argument(
+        "--label",
+        default="phase2",
+        help="Prefix for output file names (results/tables/<label>_latency_<mode>.csv)",
+    )
+    parser.add_argument(
+        "--compose-files",
+        default=os.getenv("COMPOSE_FILES", "compose.yaml"),
+        help="Comma-separated compose files used to flush Redis between rates",
+    )
     return parser.parse_args()
 
 
@@ -244,20 +296,10 @@ def main() -> None:
             )
         keywords = vocabulary
 
+    compose_files = [name for name in args.compose_files.split(",") if name]
     results = []
     for rate, request_count in zip(rates, request_counts):
-        subprocess.run(
-            [
-                "docker",
-                "compose",
-                "exec",
-                "-T",
-                "redis",
-                "redis-cli",
-                "FLUSHALL",
-            ],
-            check=True,
-        )
+        flush_redis(compose_files)
         if args.mode == "warm":
             request(args.host, args.port, args.file, args.keyword)
             rate_keywords = [args.keyword] * request_count
@@ -279,13 +321,14 @@ def main() -> None:
                 f"{rate} req/s, got {result.cached_requests}"
             )
         results.append(result)
-    write_results(results, args.output_dir, args.mode)
+    write_results(results, args.output_dir, args.mode, args.label)
     for result in results:
         print(
             f"{result.rate:>4} req/s: average={result.average_ms:.3f} ms, "
             f"p99={result.p99_ms:.3f} ms, cached={result.cached_requests}/"
             f"{result.requests}, failed={result.failed_requests}/{result.requests}"
         )
+        print(f"      per server: {format_distribution(result)}")
 
 
 if __name__ == "__main__":

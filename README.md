@@ -1,80 +1,95 @@
-# Architecture-of-distributed-Systems
-This repository contains the code used for the assignment from the course Architecture of Distributed Systems at TU/e
+Markdown
+# Distributed Word Count Service: Scalability, Load Balancing & Fault Tolerance
 
+This project implements a distributed Word Count Service built for the **Architecture of Distributed Systems** course at Eindhoven University of Technology (TU/e). The system processes real-time keyword occurrences across text files, utilizing an in-memory database (`Redis`) for high-performance caching and hot-keyword tracking.
 
-# Phase 1: Architectural Model
+---
 
-The main objective of this phase is to design the overall architecture of your distributed service. You
-are asked to design a system where clients request the number of occurrences of a keyword in a text
-document that is stored on the server.
+## Project Overview & Course Phases
 
-1. Requirements & Stakeholders: Provide two functional and two non-functional requirements
-of your system. Identify two stakeholders of the system and explain their roles in the system.
+### Phase 1: Architectural Model
+* **Architectural Style:** Client-Server architecture.
+* **Core Requirements:** 
+  * *Functional:* Provide exact word frequencies upon receiving a file ID and keyword; cache results in Redis.
+  * *Non-Functional:* Client response time under 4 seconds; support concurrent user load.
+* **Stakeholders:** Site Reliability Engineers (resource configuration) and Developers (implementation team).
+* **Architectural Style Trade-offs:**
+  * *Publish-Subscribe:* Incompatible with this system because the files are static and requests are sporadic; push-based notifications add unnecessary overhead without continuous state changes.
+  * *Peer-to-Peer (P2P):* Could use a super-peer request distributor with distributed caches, but introduces single points of failure and file availability risks if replicas are missing.
 
-Functional Requirements:
+### Phase 2: Core Service & Virtualization
+* **Virtualization & Orchestration:** Docker containers managed via Docker Compose.
+* **RPC Communication:** Implemented using Python's `rpyc` library.
+* **Performance Evaluation:** Measured execution latency (average and 99th-percentile tail latency) across varying request rates.
 
-Upon receiveing a file id and a word from a user, the system should provide the frequency of the received word in the file requested.
+### Phase 3: Scalability & Load Balancing
+* **Replication:** Scaled from 1 server to 3 active replicas (`server1`, `server2`, `server3`).
+* **Custom TCP Load Balancer:** Developed using Python's `asyncio` library to pipe raw byte-streams between clients and servers without RPC overhead.
+* **Dynamic Algorithms:** 
+  1. **Least Connections:** Routes traffic to the server with the fewest active connections.
+  2. **Least Response Time (LRT):** Uses an Exponentially Weighted Moving Average (EWMA) of past latencies with an aging factor to optimize expected wait times.
 
-The server should cache the results in an in-memory database.
+### Phase 4: Fault Tolerance & Health Monitoring
+* **Background Health Probing:** The load balancer runs an asynchronous health check loop that periodically probes each backend server via fast TCP handshakes.
+* **Instant Failure Isolation:** When a server crashes or is killed, the load balancer instantly flags it offline and routes all incoming traffic to healthy replicas.
+* **Automatic Recovery:** Once a failed server comes back online, the health monitor detects its recovery and seamlessly reintegrates it into the active routing pool.
 
-Non-Functional Requirements:
+---
 
-The client should receive the respons in less than 4 seconds.
+## Getting Started & Usage
 
-The server should handle a load of __ thousand users.
-
-Stakeholders and functions:
-
-Site Reliability Engineers - Resource configuration for the application.
-
-Developers - Group members.
-
-
-
-3. Architectural Diagram & Description: Include a clear diagram that shows the architecture of
-your system. Your service must follow a Client-Server architectural style. Your diagram should
-illustrate the key components and the connectors between them. If needed, you may explain the
-main functionality of the components and connectors concisely.
-
-(Flow chart)
-
-5. Architectural Style Trade-off Analysis: While your implementation must follow the Client-Server
-model, briefly analyze the suitability of two other architectural styles, i.e., Peer-to-Peer, Layered,
-and Publish-Subscribe, covered in the course. Discuss whether and how each could be used to
-develop a similar service.
-
-Publish-subscribe:
-
-The publish-subscribe architecture is not compatible with these requirements. In this model, a server continuously performs a task and notifies subscribers of the internal changes they have requested. Here, the server's only purpose is to count words in static files in response to specific client requests, so there is no continuous activity: the server only acts when a request arrives.
-
-Making publish-subscribe work would require one of two workarounds: a system that updates the files independently, or one that constantly iterates over every word in every file to keep the counts current. Even then, since the files are static, clients would periodically receive the same answers, which adds load without adding value.
-
-Peer-2-peer:
-
-Assuming the architecture has no file replicas, just like the Server-Client server described in Phase 1, a peer-to-peer (P2P) design with a super peer would also improve response time. The super peer acts as a request distributor: when a request arrives, it redirects it to the peer that holds the corresponding file, and that peer handles the request. While that peer is busy, the super peer keeps receiving new requests and distributing them among the other available peers. The system can therefore process multiple requests simultaneously, which is faster than the single-server, multiple-client implementation required by the assignment.
-
-This design has drawbacks. Since there are no replicas, if the peer responsible for a file is unavailable or has crashed, the file cannot be found. The super peer is also a single point of failure and a potential bottleneck, because the speed of its request handling and distribution limits the throughput of the whole system, and if it crashes, the system stops working.
-
-Regarding caching, the architecture would have caches at both levels. The super peer would keep a global cache, and each peer would keep a local cache of the most frequently requested files it is responsible for.
-
-
-
-#for next meet. although usual text counter services are user based clients, there is a possibility that this might be a service for a company and they can be considered as a client. In which case, they will also be a stakeholder since it is their project requirement. additionally, it is not clear if the client provides the reference text which will then be stored in the server or the server already has the text stored and the client just provides the reference. the former makes sense.
-
-
-
-
-# Phase 3: Scalability & Load Balancing
-
-Three server replicas (`server1`-`server3`) run behind an asyncio TCP load balancer
-(`src/wordcount_service/load_balancer.py`) that forwards the RPyC byte stream unchanged.
-Algorithms: `least_connections` and `least_response_time` (set with `LB_ALGORITHM`).
-
+### 1. Run the Full Cluster
+Build and deploy the Redis cache, 3 server replicas, and the load balancer:
 ```bash
-make up                 # redis, server1-3, loadbalancer (least connections)
-make demo               # 9 parallel requests through the load balancer
-make logs               # follow load balancer and server logs
-make lb-lrt             # switch to least response time (make lb-lc to switch back)
-make benchmark-phase3   # 1 server vs LC vs LRT, plus slow-server3 runs
-uv run python scripts/plot_phase3.py --report-dir ../ADS-Project
-```
+docker compose up -d --build --wait
+2. Test the Load Balancer
+Send a batch of parallel requests through the load balancer:
+
+Bash
+docker compose run --rm --no-deps client wordcount-client --file shakespeare.txt --keyword "love,death,king,queen,night,day,war,peace,heart" --repeat 9 --parallel
+3. Test Fault Tolerance (Phase 4)
+Stream the load balancer logs in one terminal:
+
+Bash
+docker compose logs -f loadbalancer
+Run a continuous stream of requests in a second terminal:
+
+Bash
+docker compose run --rm --no-deps client wordcount-client --file shakespeare.txt --keyword "love,death,king,queen,night,day,war,peace,heart" --repeat 1000
+In a third terminal, forcefully kill one of the servers to observe instant re-routing:
+
+Bash
+docker kill wordcount-server2
+Observe the 🔴 Health check... FAILED message in the load balancer logs and the ⚠️ Connection dropped recovery in the client output.
+
+Bring the server back online to test automated recovery:
+
+Bash
+docker start wordcount-server2
+Observe the 🟢 Health check... is back ONLINE log and the resumption of traffic distribution.
+
+## Fault Tolerance Evidence (Phase 4)
+
+### 1. Client-Side Resilience (Handling Connection Drops & Recovery)
+![Client Resilience - Part 1](assets/fault-tolerance-client.png)
+![Client Resilience - Part 2](assets/fault-tolerance-client-2.png)
+
+### 2. Load Balancer-Side Detection, Re-routing & Recovery
+![Load Balancer - Part 1](assets/fault-tolerance-lb.png)
+![Load Balancer - Part 2](assets/fault-tolerance-lb-2.png)
+
+Makefile Quick Reference
+If your environment supports make, you can use these shortcuts:
+
+Bash
+make up                 # Start redis, server1-3, and load balancer
+make demo               # Run 9 parallel requests
+make logs               # Follow load balancer and server logs
+make lb-lrt             # Switch to least response time algorithm
+make benchmark-phase3   # Run latency comparisons
+Generating Report Figures & Tables
+To run the automated benchmarking scripts and generate LaTeX tables and PDF figures for the final IEEE report:
+
+Bash
+.venv\Scripts\python scripts\benchmark.py
+.venv\Scripts\python scripts\plot_phase3.py --report-dir ../ADS-Project

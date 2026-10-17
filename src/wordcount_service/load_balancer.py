@@ -24,6 +24,7 @@ class Backend:
     active: int = 0
     total: int = 0
     ewma_ms: float | None = None
+    healthy: bool = True  # Phase 4: Track health status
 
 
 class Strategy:
@@ -38,18 +39,24 @@ class Strategy:
         raise NotImplementedError
 
     def choose(self, backends: list[Backend]) -> Backend:
+        # Phase 4: Filter out failed replicas before routing
+        healthy_backends = [b for b in backends if b.healthy]
+        
+        if not healthy_backends:
+            raise RuntimeError("All backend servers are currently offline!")
+
         # Ties are broken by "rotation": the backend at position
         # (choices_made mod n) wins first, so equal idle servers get
         # requests 1 -> 2 -> 3 instead of always server1.
-        start = self._choices_made % len(backends)
+        start = self._choices_made % len(healthy_backends)
         self._choices_made += 1
 
         def key(index: int) -> tuple[float, int, int]:
-            backend = backends[index]
-            rotation = (index - start) % len(backends)
+            backend = healthy_backends[index]
+            rotation = (index - start) % len(healthy_backends)
             return (self.score(backend), backend.active, rotation)
 
-        return backends[min(range(len(backends)), key=key)]
+        return healthy_backends[min(range(len(healthy_backends)), key=key)]
 
 
 class LeastConnections(Strategy):
@@ -81,7 +88,8 @@ class LeastResponseTime(Strategy):
         # idle server that is never chosen keeps a stale estimate forever.
         # Each time an idle server is passed over its estimate drops a little,
         # so it is eventually re-probed and gets a fresh sample.
-        for backend in backends:
+        healthy_backends = [b for b in backends if b.healthy]
+        for backend in healthy_backends:
             if backend is not winner and backend.active == 0 and backend.ewma_ms:
                 backend.ewma_ms *= self._aging_factor
         return winner
@@ -128,9 +136,15 @@ class LoadBalancer:
             client_writer.close()
             return
 
+        try:
+            backend = self._strategy.choose(self._backends)
+        except RuntimeError as e:
+            log(f"[lb] Request dropped: {e}")
+            client_writer.close()
+            return
+
         # No await between choose() and active += 1: asyncio runs one thread,
         # so no other connection can pick a backend in between.
-        backend = self._strategy.choose(self._backends)
         backend.active += 1
         backend.total += 1
         self._connection_count += 1
@@ -146,6 +160,7 @@ class LoadBalancer:
                 )
             except OSError as error:
                 log(f"[lb] #{number} cannot reach {backend.name}: {error}")
+                backend.healthy = False  # Phase 4: Instantly drop from routing pool
                 return
             await asyncio.gather(
                 pump(client_reader, backend_writer),
@@ -202,6 +217,30 @@ class LoadBalancer:
     def _format_totals(self) -> str:
         return " ".join(f"{b.name}={b.total}" for b in self._backends)
 
+    async def health_check_forever(self, interval_seconds: float = 3.0) -> None:
+        """Phase 4: Periodically probe backends to detect failures and recoveries."""
+        while True:
+            for backend in self._backends:
+                try:
+                    # Attempt a fast TCP handshake to verify the server is listening
+                    reader, writer = await asyncio.wait_for(
+                        asyncio.open_connection(backend.host, backend.port),
+                        timeout=1.0
+                    )
+                    writer.close()
+                    await writer.wait_closed()
+                    
+                    if not backend.healthy:
+                        log(f"[lb] 🟢 Health check: {backend.name} is back ONLINE")
+                        backend.healthy = True
+                        
+                except (OSError, asyncio.TimeoutError):
+                    if backend.healthy:
+                        log(f"[lb] 🔴 Health check: {backend.name} FAILED! Marking OFFLINE")
+                        backend.healthy = False
+                        
+            await asyncio.sleep(interval_seconds)
+
 
 async def pump(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     """Copy bytes from reader to writer until EOF, then half-close writer."""
@@ -231,6 +270,10 @@ async def run(args: argparse.Namespace) -> None:
         f"algorithm={strategy.name}{aging} backends: {names}"
     )
     asyncio.create_task(balancer.log_totals_forever())
+    
+    # Phase 4: Start the background health monitor
+    asyncio.create_task(balancer.health_check_forever()) 
+    
     async with server:
         await server.serve_forever()
 
@@ -265,3 +308,6 @@ def main() -> None:
     )
     args = parser.parse_args()
     asyncio.run(run(args))
+
+if __name__ == "__main__":
+    main()

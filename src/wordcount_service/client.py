@@ -1,7 +1,3 @@
-"""Command-line client for the word-count service."""
-
-from __future__ import annotations
-
 import argparse
 import json
 import os
@@ -52,6 +48,7 @@ def main() -> None:
         "--parallel", action="store_true", help="Send the requests concurrently"
     )
     args = parser.parse_args()
+
     if not args.hot and (args.file is None or args.keyword is None):
         parser.error("--file and --keyword are required unless --hot is used")
 
@@ -63,7 +60,12 @@ def main() -> None:
     requested = [keywords[number % len(keywords)] for number in range(args.repeat)]
 
     def send(keyword: str) -> str:
-        return count_once(args.host, args.port, args.file, keyword)
+        try:
+            return count_once(args.host, args.port, args.file, keyword)
+        except EOFError:
+            return f"⚠️ Connection dropped for '{keyword}' (Server died mid-request!). Continuing..."
+        except Exception as e:
+            return f"⚠️ Request failed: {e}. Continuing..."
 
     if args.parallel:
         with ThreadPoolExecutor(max_workers=args.repeat) as executor:
@@ -72,3 +74,6 @@ def main() -> None:
     else:
         for keyword in requested:
             print(send(keyword))
+
+if __name__ == "__main__":
+    main()

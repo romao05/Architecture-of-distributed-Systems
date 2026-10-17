@@ -71,12 +71,12 @@ Observe the 🟢 Health check... is back ONLINE log and the resumption of traffi
 ## Fault Tolerance Evidence (Phase 4)
 
 ### 1. Client-Side Resilience (Handling Connection Drops & Recovery)
-![Client Resilience - Part 1](assets/fault-tolerance-client.png)
-![Client Resilience - Part 2](assets/fault-tolerance-client-2.png)
+![Client Resilience - Part 1](https://raw.githubusercontent.com/satvik84/Architecture-of-distributed-Systems/phase-4-fault-tolerance/assets/fault-tolerance-client.png)
+![Client Resilience - Part 2](https://raw.githubusercontent.com/satvik84/Architecture-of-distributed-Systems/phase-4-fault-tolerance/assets/fault-tolerance-client-2.png)
 
 ### 2. Load Balancer-Side Detection, Re-routing & Recovery
-![Load Balancer - Part 1](assets/fault-tolerance-lb.png)
-![Load Balancer - Part 2](assets/fault-tolerance-lb-2.png)
+![Load Balancer - Part 1](https://raw.githubusercontent.com/satvik84/Architecture-of-distributed-Systems/phase-4-fault-tolerance/assets/fault-tolerance-lb.png)
+![Load Balancer - Part 2](https://raw.githubusercontent.com/satvik84/Architecture-of-distributed-Systems/phase-4-fault-tolerance/assets/fault-tolerance-lb-2.png)
 
 Makefile Quick Reference
 If your environment supports make, you can use these shortcuts:
